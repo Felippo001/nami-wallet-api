@@ -1,18 +1,23 @@
 {
   "name": "nami-wallet-api",
-  "version": "1.0.9",
+  "version": "1.1.0",
   "description": "Library for nami wallet",
   "main": "lib/index.js",
   "types": "lib",
   "scripts": {
-    "build": "tsc -p ."
+    "build": "npm version patch && tsc -p . && npm publish"
   },
-  "keywords": [],
+  "homepage": "https://github.com/Felippo001/nami-wallet-api#README.md",
+  "keywords": ["cardano", "nami", "wallet", "serialization-lib"],
   "author": "Backi",
   "license": "ISC",
   "devDependencies": {
     "@types/node-fetch": "^3.0.3",
     "typescript": "^4.4.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Felippo001/nami-wallet-api.git"
   },
   "dependencies": {
     "@emurgo/cardano-serialization-lib-asmjs": "^9.0.0",
