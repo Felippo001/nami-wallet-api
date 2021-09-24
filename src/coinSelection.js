@@ -15,7 +15,6 @@ import {
 
 
 
-
   let Loader = null
   /**
    * BerryPool implementation of the __Random-Improve__ coin selection algorithm.
