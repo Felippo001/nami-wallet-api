@@ -13,6 +13,7 @@ declare type Endpoints = {
     getAssets: () => Promise<Asset[]>;
     getUtxosHex: () => Promise<string[]>;
     send: (data: Send) => Promise<string>;
+    sendMultiple: (data: SendMultiple) => Promise<string>;
     delegate: (data: Delegate) => Promise<string>;
 };
 declare type Delegate = {
@@ -33,6 +34,15 @@ declare type Send = {
     address: string;
     amount?: number;
     assets?: Asset[];
+    metadata?: any;
+    metadataLabel?: string;
+};
+declare type SendMultiple = {
+    recipients: {
+        address: string;
+        amount?: number;
+        assets?: Asset[];
+    }[];
     metadata?: any;
     metadataLabel?: string;
 };

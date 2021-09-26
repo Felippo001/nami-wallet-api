@@ -1,4 +1,11 @@
+**Install**
+
+```bash
+npm i nami-wallet-api
+```
+
 **Usage**
+
 
 Import with await 
 
@@ -13,12 +20,35 @@ const Nami = await nami_lib.NamiWalletApi(
 // https://www.npmjs.com/package/@emurgo/cardano-serialization-lib-asmjs
 // but its super slow
 
+
+
+//React example
+
+useEffect(() => {
+  async function t(){
+    const nami_lib = await import('nami-wallet-api')
+    const Nami = await nami_lib.NamiWalletApi(
+        window.cardano,
+        "<blockfrost-api-key>"
+    )
+    let addr = await Nami.getAddress()
+    console.log(addr)
+  }
+  
+  t()
+}, [])
+
+
+
+
+
+
 // Setup the wasm lib to get 100x performance
 // https://www.npmjs.com/package/@emurgo/cardano-serialization-lib-browser
 
 const WASM_lib = await import('@emurgo/cardano-serialization-lib-browser/ cardano_serialization_lib')
 const Nami = await nami_lib.NamiWalletApi(
-    window.cardano, //nami wallet object
+    window.cardano,
     "<blockfrost-api-key>",
     WASM_lib
 )
@@ -64,6 +94,31 @@ let txHash = await Nami.send({
     }
 })
 
+//send to multiple recipients
+
+Nami.sendMultiple({
+    recipients: [
+        {
+            address: "",
+            amount: 2,
+            assets: [
+                {
+                    "unit": "",
+                    "quantity": "1"
+                }
+            ]
+        },
+        {
+            address: "",
+            amount: 3
+        },
+        {
+            address: "",
+            amount: 213
+        }
+    ],
+})
+
 ```
 
 Delegate
@@ -89,8 +144,9 @@ getUtxos:  ()  =>  Promise<Utxo[]>,
 getAssets:  ()  =>  Promise<Asset[]>,
 getUtxosHex:  ()  =>  Promise<string[]>,
 
-send:  (data_object)  =>  Promise<string>,
-delegate:  (data_object)  =>  Promise<string>
+send:  (data)  =>  Promise<string>,
+sendMultiple: (data) => Promise<string>,
+delegate:  (data)  =>  Promise<string>
 
 ```
 Wasm library highly recommended for send(), delegate() functions. Takes 1-2 minutes without the wasm library just to build the transaction.

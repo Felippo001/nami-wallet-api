@@ -1,4 +1,4 @@
-import { TransactionUnspentOutput } from '@emurgo/cardano-serialization-lib-asmjs'
+import { MultiAsset, TransactionOutputs, TransactionUnspentOutput } from '@emurgo/cardano-serialization-lib-asmjs'
 
 type Endpoints = {
     isEnabled : () => Promise<boolean>,
@@ -15,6 +15,7 @@ type Endpoints = {
     getAssets: () => Promise<Asset[]>,
     getUtxosHex: () => Promise<string[]>,
     send: (data: Send) => Promise<string>,
+    sendMultiple: (data: SendMultiple) => Promise<string>,
     delegate: (data: Delegate) => Promise<string>
 }
 
@@ -35,10 +36,21 @@ type Asset = {
     quantity: string
 }
 
+
 type Send = {
     address: string, 
     amount?: number, 
     assets?: Asset[],
+    metadata?: any,
+    metadataLabel?: string
+}
+
+type SendMultiple = {
+    recipients: {
+        address: string, 
+        amount?: number, 
+        assets?: Asset[]
+    }[],
     metadata?: any,
     metadataLabel?: string
 }
@@ -155,13 +167,9 @@ export async function NamiWalletApi(NamiWalletObject: any, blockfrostApiKey: str
 
     
     async function send({address, amount = 0, assets = [], metadata = null, metadataLabel = '721'} : Send) : Promise<string> {
-        let lovelace = Math.floor(amount * 1000000).toString()
-
-        let ReceiveAddress = address
         let PaymentAddress = await getAddress()
 
         let protocolParameter = await _getProtocolParameter()
-
         let utxos = (await getUtxosHex()).map(u => S.TransactionUnspentOutput.from_bytes(
             Buffer.from(
                 u,
@@ -169,37 +177,44 @@ export async function NamiWalletApi(NamiWalletObject: any, blockfrostApiKey: str
             )
         ))
 
-        let AssetsMap : any = {}
-        for(let asset of assets){
-            let [policy, assetName] = asset.unit.split('.')
-            let quantity = asset.quantity
-            if(!Array.isArray(AssetsMap[policy])){
-                AssetsMap[policy] = []
-            }
-            AssetsMap[policy].push({
-                "unit": Buffer.from(assetName, 'ascii').toString('hex'), 
-                "quantity": quantity
-            })
-            
-        }
-        let multiAsset = S.MultiAsset.new()
-        for(const policy in AssetsMap){
+        let lovelace = Math.floor(amount * 1000000).toString()
 
-            const ScriptHash = S.ScriptHash.from_bytes(
-                Buffer.from(policy,'hex')
-            )
-            const Assets = S.Assets.new()
-            
-            const _assets = AssetsMap[policy]
+        let ReceiveAddress = address
+        
 
-            for(const asset of _assets){
-                const AssetName = S.AssetName.new(Buffer.from(asset.unit,'hex'))
-                const BigNum = S.BigNum.from_str(asset.quantity)
+        let multiAsset = _makeMultiAsset(assets)
+
+        // let AssetsMap : any = {}
+        // for(let asset of assets){
+        //     let [policy, assetName] = asset.unit.split('.')
+        //     let quantity = asset.quantity
+        //     if(!Array.isArray(AssetsMap[policy])){
+        //         AssetsMap[policy] = []
+        //     }
+        //     AssetsMap[policy].push({
+        //         "unit": Buffer.from(assetName, 'ascii').toString('hex'), 
+        //         "quantity": quantity
+        //     })
+            
+        // }
+        // let multiAsset = S.MultiAsset.new()
+        // for(const policy in AssetsMap){
+
+        //     const ScriptHash = S.ScriptHash.from_bytes(
+        //         Buffer.from(policy,'hex')
+        //     )
+        //     const Assets = S.Assets.new()
+            
+        //     const _assets = AssetsMap[policy]
+
+        //     for(const asset of _assets){
+        //         const AssetName = S.AssetName.new(Buffer.from(asset.unit,'hex'))
+        //         const BigNum = S.BigNum.from_str(asset.quantity)
                 
-                Assets.insert(AssetName, BigNum)  
-            }
-            multiAsset.insert(ScriptHash, Assets)
-        }
+        //         Assets.insert(AssetName, BigNum)  
+        //     }
+        //     multiAsset.insert(ScriptHash, Assets)
+        // }
 
 
 
@@ -236,6 +251,57 @@ export async function NamiWalletApi(NamiWalletObject: any, blockfrostApiKey: str
         return await _signSubmitTx(RawTransaction)
     }
     
+    async function sendMultiple({recipients = [], metadata = null, metadataLabel = '721'}: SendMultiple) : Promise<string> {
+        let PaymentAddress = await getAddress()
+
+        let protocolParameter = await _getProtocolParameter()
+        let utxos = (await getUtxosHex()).map(u => S.TransactionUnspentOutput.from_bytes(
+            Buffer.from(
+                u,
+                'hex'
+            )
+        ))
+
+        let outputs = S.TransactionOutputs.new()
+
+        for (let recipient of recipients){
+            let lovelace = Math.floor((recipient.amount || 0) * 1000000).toString()
+            let ReceiveAddress = recipient.address
+            let multiAsset = _makeMultiAsset(recipient.assets || [])
+
+            let outputValue = S.Value.new(
+                S.BigNum.from_str(lovelace)
+            )
+    
+            let minAda = S.min_ada_required(
+                outputValue, 
+                S.BigNum.from_str(protocolParameter.minUtxo)
+            )
+            if(S.BigNum.from_str(lovelace).compare(minAda) < 0)outputValue.set_coin(minAda)
+    
+            if((recipient.assets || []).length > 0) outputValue.set_multiasset(multiAsset)
+
+            outputs.add(
+                S.TransactionOutput.new(
+                    S.Address.from_bech32(ReceiveAddress),
+                    outputValue
+                )
+            )
+        }
+
+        let RawTransaction = _txBuilder({
+            PaymentAddress: PaymentAddress,
+            Utxos: utxos,
+            Outputs: outputs,
+            ProtocolParameter: protocolParameter,
+            Metadata: metadata,
+            MetadataLabel: metadataLabel,
+            Delegation: null
+        })
+
+        return await _signSubmitTx(RawTransaction)
+    }
+
     async function delegate({poolId, metadata = null, metadataLabel = '721'} : Delegate) : Promise<string>{
         let protocolParameter = await _getProtocolParameter()
         
@@ -298,6 +364,41 @@ export async function NamiWalletApi(NamiWalletObject: any, blockfrostApiKey: str
 
     //////////////////////////////////////////////////
 
+    function _makeMultiAsset(assets : Asset[]) : MultiAsset{
+        let AssetsMap : any = {}
+        for(let asset of assets){
+            let [policy, assetName] = asset.unit.split('.')
+            let quantity = asset.quantity
+            if(!Array.isArray(AssetsMap[policy])){
+                AssetsMap[policy] = []
+            }
+            AssetsMap[policy].push({
+                "unit": Buffer.from(assetName, 'ascii').toString('hex'), 
+                "quantity": quantity
+            })
+            
+        }
+        let multiAsset = S.MultiAsset.new()
+        for(const policy in AssetsMap){
+
+            const ScriptHash = S.ScriptHash.from_bytes(
+                Buffer.from(policy,'hex')
+            )
+            const Assets = S.Assets.new()
+            
+            const _assets = AssetsMap[policy]
+
+            for(const asset of _assets){
+                const AssetName = S.AssetName.new(Buffer.from(asset.unit,'hex'))
+                const BigNum = S.BigNum.from_str(asset.quantity)
+                
+                Assets.insert(AssetName, BigNum)  
+            }
+            multiAsset.insert(ScriptHash, Assets)
+        }
+        return multiAsset
+    }
+
     function _utxoToAssets(utxo: TransactionUnspentOutput) : Asset[]{
         let value : any = utxo.output().amount()
         const assets = [];
@@ -333,7 +434,7 @@ export async function NamiWalletApi(NamiWalletObject: any, blockfrostApiKey: str
     function _txBuilder({PaymentAddress, Utxos, Outputs, ProtocolParameter, Metadata = null, MetadataLabel = '721', Delegation = null} : {
         PaymentAddress : string
         Utxos : any,
-        Outputs : any,
+        Outputs : TransactionOutputs,
         ProtocolParameter : any,
         Metadata? : any,
         MetadataLabel?: string,
@@ -435,7 +536,11 @@ export async function NamiWalletApi(NamiWalletObject: any, blockfrostApiKey: str
             //const auxiliaryDataHash = S.hash_auxiliary_data(AUXILIARY_DATA)
             txBuilder.set_auxiliary_data(AUXILIARY_DATA)
         }
-        txBuilder.add_output(Outputs.get(0))
+        
+        for(let i=0; i<Outputs.len(); i++){
+            txBuilder.add_output(Outputs.get(i))
+        }
+        
 
         const change = selection.change;
         const changeMultiAssets = change.multiasset();
@@ -580,6 +685,7 @@ export async function NamiWalletApi(NamiWalletObject: any, blockfrostApiKey: str
         getAssets,
         getUtxosHex,
         send,
+        sendMultiple,
         delegate
     }
 }
