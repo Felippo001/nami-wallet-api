@@ -1,5 +1,5 @@
 import { MultiAsset, TransactionOutputs, TransactionUnspentOutput } from '@emurgo/cardano-serialization-lib-asmjs'
-
+import { Buffer } from 'buffer'
 type Endpoints = {
     isEnabled : () => Promise<boolean>,
     enable : () => Promise<void>,
@@ -16,7 +16,9 @@ type Endpoints = {
     getUtxosHex: () => Promise<string[]>,
     send: (data: Send) => Promise<string>,
     sendMultiple: (data: SendMultiple) => Promise<string>,
-    delegate: (data: Delegate) => Promise<string>
+    delegate: (data: Delegate) => Promise<string>,
+
+    auxiliary: Auxiliary
 }
 
 type Delegate = {
@@ -54,6 +56,17 @@ type SendMultiple = {
     metadata?: any,
     metadataLabel?: string
 }
+
+type Auxiliary = {
+    Buffer: object,
+    AsciiToBuffer: (string : string) => Buffer,
+    HexToBuffer: (string : string) => Buffer,
+    AsciiToHex: (string : string) => string,
+    HexToAscii: (string : string) => string,
+    BufferToAscii: (buffer : Buffer) => string,
+    BufferToHex: (buffer : Buffer) => string,
+}
+
 
 const ERROR = {
     FAILED_PROTOCOL_PARAMETER: 'Couldnt fetch protocol parameters from blockfrost',
@@ -222,13 +235,14 @@ export async function NamiWalletApi(NamiWalletObject: any, blockfrostApiKey: str
             S.BigNum.from_str(lovelace)
         )
 
+        if(assets.length > 0)outputValue.set_multiasset(multiAsset)
+
         let minAda = S.min_ada_required(
             outputValue, 
-            S.BigNum.from_str(protocolParameter.minUtxo)
+            S.BigNum.from_str(protocolParameter.minUtxo || "1000000")
         )
         if(S.BigNum.from_str(lovelace).compare(minAda) < 0)outputValue.set_coin(minAda)
 
-        if(assets.length > 0)outputValue.set_multiasset(multiAsset)
 
         let outputs = S.TransactionOutputs.new()
         outputs.add(
@@ -272,15 +286,16 @@ export async function NamiWalletApi(NamiWalletObject: any, blockfrostApiKey: str
             let outputValue = S.Value.new(
                 S.BigNum.from_str(lovelace)
             )
-    
+            
+            if((recipient.assets || []).length > 0) outputValue.set_multiasset(multiAsset)
+
             let minAda = S.min_ada_required(
                 outputValue, 
-                S.BigNum.from_str(protocolParameter.minUtxo)
+                S.BigNum.from_str(protocolParameter.minUtxo || "1000000")
             )
             if(S.BigNum.from_str(lovelace).compare(minAda) < 0)outputValue.set_coin(minAda)
     
-            if((recipient.assets || []).length > 0) outputValue.set_multiasset(multiAsset)
-
+            
             outputs.add(
                 S.TransactionOutput.new(
                     S.Address.from_bech32(ReceiveAddress),
@@ -361,6 +376,47 @@ export async function NamiWalletApi(NamiWalletObject: any, blockfrostApiKey: str
 
         return txHash
     }
+
+    async function signData(string : string) : Promise<string> {
+        let address = await getAddressHex()
+        let coseSign1Hex = await Nami.signData(
+            address,
+            Buffer.from(
+                string,
+                "ascii"
+            ).toString('hex')
+        )
+        return coseSign1Hex
+    }
+
+    //////////////////////////////////////////////////
+    //Auxiliary
+
+    function AsciiToBuffer(string : string) : Buffer{
+        return Buffer.from(string, "ascii")
+    }
+
+    function HexToBuffer(string: string) : Buffer{
+        return Buffer.from(string, "hex")
+    }
+
+    function AsciiToHex(string: string) : string{
+        return AsciiToBuffer(string).toString('hex')
+    }
+
+    function HexToAscii(string: string) : string{
+        return HexToBuffer(string).toString("ascii")
+    }
+
+    function BufferToAscii(buffer: Buffer) : string{
+        return buffer.toString('ascii')
+    }
+
+    function BufferToHex(buffer: Buffer) : string{
+        return buffer.toString("hex")
+    }
+
+    
 
     //////////////////////////////////////////////////
 
@@ -448,8 +504,8 @@ export async function NamiWalletApi(NamiWalletObject: any, blockfrostApiKey: str
             }
         } | null
     }) : Uint8Array {
-        const MULTIASSET_SIZE = 5848;
-        const VALUE_SIZE = 5860;
+        const MULTIASSET_SIZE = 5000;
+        const VALUE_SIZE = 5000;
         const totalAssets = 0
         CoinSelection.setLoader(S)
         CoinSelection.setProtocolParameters(
@@ -554,34 +610,41 @@ export async function NamiWalletApi(NamiWalletObject: any, blockfrostApiKey: str
             const policies = changeMultiAssets.keys();
             const makeSplit = () => {
                 for (let j = 0; j < changeMultiAssets.len(); j++) {
-                    const policy = policies.get(j);
-                    const policyAssets = changeMultiAssets.get(policy);
-                    const assetNames = policyAssets.keys();
-                    const assets = S.Assets.new();
-                    for (let k = 0; k < assetNames.len(); k++) {
-                        const policyAsset = assetNames.get(k);
-                        const quantity = policyAssets.get(policyAsset);
-                        assets.insert(policyAsset, quantity);
-                        //check size
-                        const checkMultiAssets = S.MultiAsset.from_bytes(
-                        partialMultiAssets.to_bytes()
-                        );
-                        checkMultiAssets.insert(policy, assets);
-                        if (checkMultiAssets.to_bytes().length * 2 >= MULTIASSET_SIZE) {
-                        partialMultiAssets.insert(policy, assets);
-                        return;
-                        }
+                  const policy = policies.get(j);
+                  const policyAssets = changeMultiAssets.get(policy);
+                  const assetNames = policyAssets.keys();
+                  const assets = S.Assets.new();
+                  for (let k = 0; k < assetNames.len(); k++) {
+                    const policyAsset = assetNames.get(k);
+                    const quantity = policyAssets.get(policyAsset);
+                    assets.insert(policyAsset, quantity);
+                    //check size
+                    const checkMultiAssets = S.MultiAsset.from_bytes(
+                      partialMultiAssets.to_bytes()
+                    );
+                    checkMultiAssets.insert(policy, assets);
+                    const checkValue = S.Value.new(
+                      S.BigNum.from_str('0')
+                    );
+                    checkValue.set_multiasset(checkMultiAssets);
+                    if (
+                      checkValue.to_bytes().length * 2 >=
+                      VALUE_SIZE
+                    ) {
+                      partialMultiAssets.insert(policy, assets);
+                      return;
                     }
-                    partialMultiAssets.insert(policy, assets);
-                    }
-                };
+                  }
+                  partialMultiAssets.insert(policy, assets);
+                }
+              };
 
             makeSplit();
             partialChange.set_multiasset(partialMultiAssets);
 
             const minAda = S.min_ada_required(
                 partialChange,
-                ProtocolParameter.minUtxo
+                S.BigNum.from_str(ProtocolParameter.minUtxo)
             );
             partialChange.set_coin(minAda);
 
@@ -686,7 +749,16 @@ export async function NamiWalletApi(NamiWalletObject: any, blockfrostApiKey: str
         getUtxosHex,
         send,
         sendMultiple,
-        delegate
+        delegate,
+        auxiliary: {
+            Buffer: Buffer,
+            AsciiToBuffer: AsciiToBuffer,
+            HexToBuffer: HexToBuffer,
+            AsciiToHex: AsciiToHex,
+            HexToAscii: HexToAscii,
+            BufferToAscii: BufferToAscii,
+            BufferToHex: BufferToHex,
+        }
     }
 }
 

@@ -1,3 +1,4 @@
+import { Buffer } from 'buffer';
 declare type Endpoints = {
     isEnabled: () => Promise<boolean>;
     enable: () => Promise<void>;
@@ -15,6 +16,7 @@ declare type Endpoints = {
     send: (data: Send) => Promise<string>;
     sendMultiple: (data: SendMultiple) => Promise<string>;
     delegate: (data: Delegate) => Promise<string>;
+    auxiliary: Auxiliary;
 };
 declare type Delegate = {
     poolId: string;
@@ -45,6 +47,15 @@ declare type SendMultiple = {
     }[];
     metadata?: any;
     metadataLabel?: string;
+};
+declare type Auxiliary = {
+    Buffer: object;
+    AsciiToBuffer: (string: string) => Buffer;
+    HexToBuffer: (string: string) => Buffer;
+    AsciiToHex: (string: string) => string;
+    HexToAscii: (string: string) => string;
+    BufferToAscii: (buffer: Buffer) => string;
+    BufferToHex: (buffer: Buffer) => string;
 };
 export declare function NamiWalletApi(NamiWalletObject: any, blockfrostApiKey: string, serializationLib?: any): Promise<Endpoints>;
 export {};
