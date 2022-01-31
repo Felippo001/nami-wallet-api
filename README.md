@@ -12,7 +12,7 @@ Import with await
 ```js
 const nami_lib = await import('nami-wallet-api')
 const Nami = await nami_lib.NamiWalletApi(
-    window.cardano, //nami wallet object
+    window.cardano.selectedWallet, //nami wallet object
     "<blockfrost-api-key>"
 )
 
@@ -28,7 +28,7 @@ useEffect(() => {
   async function t(){
     const nami_lib = await import('nami-wallet-api')
     const Nami = await nami_lib.NamiWalletApi(
-        window.cardano,
+        window.cardano.selectedWallet,
         "<blockfrost-api-key>"
     )
     let addr = await Nami.getAddress()
@@ -48,7 +48,7 @@ useEffect(() => {
 
 const WASM_lib = await import('@emurgo/cardano-serialization-lib-browser/ cardano_serialization_lib')
 const Nami = await nami_lib.NamiWalletApi(
-    window.cardano,
+    window.cardano.selectedWallet,
     "<blockfrost-api-key>",
     WASM_lib
 )
