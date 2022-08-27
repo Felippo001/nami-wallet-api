@@ -1,3 +1,7 @@
+# [Deprecated] 
+Use lucid-cardano instead
+
+
 **Install**
 
 ```bash
